@@ -421,10 +421,12 @@ class LoggingUI(TimedFrame):
                 SetReal2DAround(template.result, maxLoc, config.logging.match_exclusion_size, 0.0)
                 minVal, maxVal, minLoc, maxLoc = cv.MinMaxLoc(template.result)
         
-        self._log.append(digits_sieve.getValue())
-        self.setValue(self._log[-1])
-        self._textarea.insert(tk.END, '%d\n' % self._log[-1])
-        self._textarea.see(tk.END)
+        value = digits_sieve.getValue()
+        if value is not None:
+            self._log.append(value)
+            self.setValue(value)
+            self._textarea.insert(tk.END, '%d\n' % value)
+            self._textarea.see(tk.END)
 
     def logStart(self):
         u'''ロギングを開始する'''
