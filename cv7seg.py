@@ -5,10 +5,11 @@ u'''
 WebカメラとOpenCVを使って7セグメントLEDの数値を読み取る
 '''
 
-import os, time
+import os, time, itertools, urllib
 from ConfigParser import SafeConfigParser
 from PIL import Image
 import Tkinter as tk
+from ScrolledText import ScrolledText
 import ImageTk as itk
 import cv
 try:
@@ -308,38 +309,49 @@ class LoggingUI(TimedFrame):
         
         # 左側UI
         frame1 = tk.Frame(self)
-        frame1.pack(side = tk.LEFT, expand = 1, fill = tk.BOTH)
+        frame1.pack(side = tk.LEFT, expand = True, fill = tk.BOTH)
         
         # カメラ画像表示用Canvasなどの準備
         self._cvmat = None
         self._image = tk.PhotoImage(width = config.canvas.width, height = config.canvas.height)
         self._canvas = tk.Canvas(frame1, width = config.canvas.width, height = config.canvas.height)
         self._canvas.create_image(config.canvas.width / 2, config.canvas.height / 2, image = self._image, tags = 'image')
-        self._canvas.pack(expand = 1, fill = tk.BOTH)
+        self._canvas.pack(expand = True, fill = tk.BOTH)
         
         # ボタン
         self._main_button = tk.Button(frame1)
-        self._main_button.pack(side = tk.TOP, fill = tk.BOTH)
+        self._main_button.pack(side = tk.LEFT)
         self.logStop()
+        self._reset_button = tk.Button(frame1, text = u'リセット', command = self.reset)
+        self._reset_button.pack(side = tk.RIGHT)
+        
+        # 生データ表示領域
+        self._textarea = ScrolledText(self, width = 6, height = 18)
+        self._textarea.pack(side = tk.LEFT, expand = True)
         
         # 右側UI
         frame2 = tk.Frame(self)
-        frame2.pack(side = tk.RIGHT, expand = 1, fill = tk.BOTH)
+        frame2.pack(side = tk.LEFT, expand = True, fill = tk.BOTH)
         
         # ログデータ表示領域
         self._graph = tk.Canvas(frame2, width = config.canvas.width, height = config.canvas.height, bg = 'white')
-        self._graph.pack(expand = 1, fill = tk.BOTH)
+        self._graph.pack(expand = True, fill = tk.BOTH)
         self._bar_graph = BarGraph(A(width = config.canvas.width, height = config.canvas.height), config.logging.graph_max_count)
         
         # ボタン
-        self._out_button = tk.Button(frame2, text = u'生データ')
+        self._out_button = tk.Button(frame2, text = u'生データをコピー', command = self.datacopy)
         self._out_button.pack(side = tk.LEFT)
+        self._gchart_button = tk.Button(frame2, text = u'Google Chart URLをコピー', command = self.gchart)
+        self._gchart_button.pack(side = tk.RIGHT)
         
         # 画像をフィルタするための変数
         self._clip_rect, self._perspective_points = Points2Rect(config.normalize.points)
         
         # ロギング開始、停止のフラグ
         self._take_log = False
+        
+        # ログ
+        self._log = []
         
         # カメラ画像の更新を1秒間隔にする
         self.addTiming(self.showImage, 1)
@@ -409,9 +421,10 @@ class LoggingUI(TimedFrame):
                 SetReal2DAround(template.result, maxLoc, config.logging.match_exclusion_size, 0.0)
                 minVal, maxVal, minLoc, maxLoc = cv.MinMaxLoc(template.result)
         
-        self.setValue(digits_sieve.getValue())
-        #self._textarea.insert('end', '%d\n' % digits_sieve.getValue())
-        #self.log(digits_sieve.getValue(), waiter.getPassage())
+        self._log.append(digits_sieve.getValue())
+        self.setValue(self._log[-1])
+        self._textarea.insert(tk.END, '%d\n' % self._log[-1])
+        self._textarea.see(tk.END)
 
     def logStart(self):
         u'''ロギングを開始する'''
@@ -422,6 +435,37 @@ class LoggingUI(TimedFrame):
         u'''ロギングを停止する'''
         self._main_button.configure(text = u'スタート', command = self.logStart)
         self._take_log = False
+    
+    def reset(self):
+        u'''リセット'''
+        self._bar_graph.init()
+        self.setValue(0)
+        self._log = []
+        self._textarea.delete('1.0', tk.END)
+    
+    def datacopy(self):
+        u'''生データをクリップボードにコピーする'''
+        text = self._textarea.get('1.0', tk.END)
+        self.clipboard_clear()
+        self.clipboard_append(text)
+    
+    def gchart(self):
+        u'''Google Chart API用のURLをクリップボードにコピーする'''
+        if  self._log \
+            and len(self._log) > 0 \
+            and max(self._log) > 0:
+                
+                unit = float(4095) / max(self._log)
+                url = gExtendedUrl(
+                    map(lambda x: unit * x, self._log),
+                    cht = 'bvs', # 棒グラフ
+                    chxt = 'y', # y軸の目盛り表示
+                    chxr = '0,0,%d' % max(self._log), # y軸の最小最大値
+                    chg = '0,10,3,2', # 補助線
+                    chbh = '%d,1' % (480 / len(self._log) - 1), # 棒グラフの棒の幅
+                )
+                self.clipboard_clear()
+                self.clipboard_append(url)
         
     def filter(self, cvmat):
         u'''画像をフィルタする'''
@@ -577,6 +621,34 @@ def SubPoint(p1, p2):
     return A(x = p1.x - p2.x, y = p1.y - p2.y)
 
 
+gradix_chars = tuple([chr(a)  for a in itertools.chain(
+                xrange(ord("A"), ord("Z") + 1),
+                xrange(ord("a"), ord("z") + 1),
+                xrange(ord("0"), ord("9") + 1),
+                (ord("-"), ord("."))
+            )])
+def gExtendedDataString(integer_value):
+    u'''Google Chart用の拡張形式のデータ表現文字列を返す'''
+    if not integer_value:
+        return '__'
+    integer_value = int(integer_value)
+    assert 0 <= integer_value <= 4095, u'integer_valueは0から4095の整数である必要があります'
+    return gradix_chars[integer_value / len(gradix_chars)] + gradix_chars[integer_value % len(gradix_chars)]
+
+
+def gExtendedUrl(integer_values, **kwargs):
+    u'''Google Chart用の拡張形式のURLを返す'''
+    if 'chs' not in kwargs:
+        kwargs['chs'] = '480x360'
+    if 'cht' not in kwargs:
+        kwargs['cht'] = 'bvs'
+    
+    chars = map(gExtendedDataString, integer_values)
+    data = ''.join(chars)
+    params = urllib.urlencode(kwargs)
+    return 'http://chart.apis.google.com/chart?chd=e:%s&%s' % (data, params)
+    
+
 class DigitsSieve(object):
     u'''数値情報を受け取り、桁ごとに最適なものを選び出すクラス'''
     def __init__(self):
@@ -615,11 +687,6 @@ class BarGraph(object):
         assert max_count > 0
         self._outer_size = outer_size
         self._max_count = max_count
-        self._values = [0 for i in xrange(max_count)]
-        self._max_value = 0
-        self.init()
-        
-    def init(self):
         self._area = A(
             x = float(self._outer_size.width) / 10,
             y = float(self._outer_size.height) / 10,
@@ -627,6 +694,11 @@ class BarGraph(object):
             height = float(self._outer_size.height) / 10 * 8,
         )
         self._bar_width = float(self._area.width) / self._max_count
+        self.init()
+        
+    def init(self):
+        self._values = [0 for i in xrange(self._max_count)]
+        self._max_value = 0
     
     def setValue(self, value):
         self._values.pop(0)
