@@ -85,7 +85,7 @@ class NormalizeUI(TimedFrame):
     
     def init(self):
         # カメラの準備
-        self._camera = cv.CaptureFromCAM(0)
+        self._camera = cv.CaptureFromCAM(config.camera.id)
         
         # カメラ画像表示用Canvasなどの準備
         self._image = tk.PhotoImage(width = config.canvas.width, height = config.canvas.height)
@@ -174,7 +174,7 @@ class TemplateUI(TimedFrame):
             config.template.images = [None for i in xrange(10)]
         
         # カメラの準備
-        self._camera = cv.CaptureFromCAM(0)
+        self._camera = cv.CaptureFromCAM(config.camera.id)
         
         # カメラ画像表示用Canvasなどの準備
         self._cvmat = None
@@ -305,7 +305,7 @@ class LoggingUI(TimedFrame):
         self.loadTemplates()
         
         # カメラの準備
-        self._camera = cv.CaptureFromCAM(0)
+        self._camera = cv.CaptureFromCAM(config.camera.id)
         
         # 左側UI
         frame1 = tk.Frame(self)
@@ -788,6 +788,9 @@ config = A(
     ),
     canvas = A(
         width = 320, height = 240,
+    ),
+    camera = A(
+        id = 0,
     ),
     normalize = A(
         timing = 1,
